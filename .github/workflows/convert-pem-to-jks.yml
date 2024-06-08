@@ -1,0 +1,48 @@
+name: Convert PEM to JKS
+
+on:
+  workflow_dispatch:
+
+jobs:
+  convert-pem-to-jks:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Create PEM file from GitHub Secret
+        run: echo "${{ secrets.PEM_FILE }}" > certificate.pem
+
+      - name: Install OpenSSL
+        run: sudo apt-get update && sudo apt-get install -y openssl
+
+      - name: Validate PEM file
+        run: openssl x509 -in certificate.pem -noout -text
+
+      - name: Convert PEM to P12
+        run: |
+          openssl pkcs12 -export -in certificate.pem -inkey certificate.pem -out certificate.p12 -name "${{ vars.JKS_ALIAS }}" -passout pass:"${{ secrets.JKS_PASS }}"
+
+      - name: Set up JDK for Keytool
+        uses: actions/setup-java@v4
+        with:
+          java-version: "17"
+          distribution: "corretto"
+
+      - name: Convert P12 to JKS
+        run: echo ${{ vars.JKS_ALIAS }} && keytool -importkeystore -deststoretype JKS -deststorepass ${{ secrets.JKS_PASS }} -destkeypass ${{ secrets.JKS_PASS }} -destkeystore certificate.jks -srckeystore certificate.p12 -srcstoretype PKCS12 -srcstorepass ${{ secrets.JKS_PASS }} -alias ${{ vars.JKS_ALIAS }}
+
+      - name: Validate JKS file
+        run: keytool -list -v -keystore certificate.jks -storepass ${{ secrets.JKS_PASS }}
+
+      - name: Upload JKS file
+        uses: actions/upload-artifact@v4
+        with:
+          name: JKS certificate
+          path: certificate.jks
+          retention-days: 1
+          compression-level: 9
+
+      - name: Certificate cleanup
+        run: |
+          rm certificate.jks
+          rm certificate.pem
+          rm certificate.p12
